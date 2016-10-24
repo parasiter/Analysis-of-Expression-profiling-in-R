@@ -1,0 +1,91 @@
+library(GEOquery)
+library(affy)
+library(limma)
+
+##求芯片数据间的均值
+mymean<- function(x,y){
+  sum <- exp2(y[,x[1]])
+  for(i in 2:length(x))
+  {
+    sum <-exp2(y[,x[i]])+sum
+  } 
+  mean<-sum/length(x)
+  return(mean)
+}
+##依据注释的GSMID 查找单个实验中的GSM
+Get_colnames<-function(GSM,Total_GSM){
+  colnames<-c()
+  for (k in 1:length(GSM)) {
+    name<-grep(GSM[k],Total_GSM,value = TRUE)
+    colnames<-c(colnames,name)
+  }
+  return(colnames)
+}
+##求2的指数
+exp2<-function(x){
+  return(exp(x*log(2)))
+}
+
+
+setwd("E:/TOTAL_data")
+
+DATA.FRAME<-read.csv("E:/Data_matrix_csv.csv",stringsAsFactors = FALSE)
+TOTAL.GSE_ID<-unique(DATA.FRAME$GSE_ID)
+##保留最终结果，rownames为geneID,colnames为Title
+OUTPUT<-c()
+##for (i in 1:length(TOTAL.GSE_ID)){
+for (i in 63:length(TOTAL.GSE_ID)){
+  ##获取单组实验的GSE_ID号
+  single.gse_ID<-paste("GSE",TOTAL.GSE_ID[i],sep = "")##
+  ##获取压缩文件名
+  RAW.tar<-paste(single.gse_ID,"RAW.tar",sep = "_")
+  ##进入GSE子文件夹，并保存上级文件夹
+  oldwd<-setwd(single.gse_ID)
+  ##解压文件，结果放在data文件中
+  untar(RAW.tar,exdir ="data")
+  ##获取data文件夹中的所有GZ文件名
+  cels<- list.files("data/",pattern = "[gz]")
+  ##解压gz文件
+  sapply(paste("data",cels,sep = "/"), gunzip)
+  ##读取data文件夹内的所有cel文件
+  setwd("data")
+  rawdata<-ReadAffy()
+  ##RMA标准化
+  RMA_data<-rma(rawdata)
+  ##获取芯片表达值
+  RMAset<-exprs(RMA_data)
+  ##获取单组实验的注释内容
+  single.frame<-DATA.FRAME[DATA.FRAME["GSE_ID"]==TOTAL.GSE_ID[i],]##
+  attach(single.frame)
+  level<-unique(single.frame$Title)
+  Title<-factor(single.frame$Title,levels = level)
+  ##在每组实验中计算每个对照实验的结果
+  for (j in 1:length(levels(Title))) {
+    ##获取单组对照title
+    Single_matrix_name<-levels(Title)[j]##
+    ##获取单组对照矩阵
+    Single_matrix<-single.frame[single.frame["Title"]==Single_matrix_name,c("GSM_ID","Treated")]
+    ##获取对照组和实验组GSMID
+    GSM_control <-Single_matrix[Single_matrix[,"Treated"]=="C","GSM_ID"]
+    GSM_treated <-Single_matrix[Single_matrix[,"Treated"]=="T","GSM_ID"]
+    ##此处需要使用正则表达式取GSM_ID，否则RMASET与GSM不匹配
+    GSM_control<-Get_colnames(GSM_control,colnames(RMAset))
+    GSM_treated<-Get_colnames(GSM_treated,colnames(RMAset))
+    ##计算均值
+    control.mean<-mymean(GSM_control,RMAset)
+    treated.mean<-mymean(GSM_treated,RMAset)
+    ##取对数
+    lfc <- log2(treated.mean/control.mean)
+    ##将结果写入OUTPUT
+    OUTPUT<-cbind(OUTPUT,lfc)
+    #为每组对照加上Title
+    colnames(OUTPUT)[length(colnames(OUTPUT))]<-Single_matrix_name;
+  }
+  detach(single.frame)
+  setwd(oldwd)
+  
+}
+
+
+
+write.csv(OUTPUT,file = "E:/Final_OUTPUT.csv")
