@@ -1,0 +1,28 @@
+##包含gunzip
+library(GEOquery)
+##包含qc()
+library(simpleaffy)
+library(xlsx)
+setwd("E:/newArabidopsis/stress/abiotic/")
+stress.category<- list.files()
+oldwd<-getwd()
+for (i in 1:length(stress.category)) {
+  setwd(stress.category[i])
+  mydata<-read.xlsx("Total.xlsx",1)
+  GSEs <-unique(mydata$GSE_ID)
+  GSEs <- paste("GSE",GSEs,sep = "")
+  for (j in 1:length(GSEs)) {
+    oldwd1<-setwd(GSEs[j])
+    untar(paste(GSEs[j],"RAW.tar",sep ="_"),exdir = "data")
+    oldwd2<-setwd("data")
+    cels<-list.files(pattern = "[gz]")
+    sapply(cels, gunzip)
+    ##做质量图，判断芯片是否可用，需要包affyPLM
+    raw.data<-ReadAffy()
+    setwd(oldwd2)
+    pdf(title = GSEs[j])
+    quality<-qc(raw.data)
+    plot(quality)
+  }
+  setwd(oldwd)
+}
